@@ -38,9 +38,9 @@ TEST(StorageTest, FullCache) {
     EXPECT_TRUE(storage.Put("2", "abc"));
 
     std::string value;
-    EXPECT_TRUE(storage.Get("1", value));
-    EXPECT_TRUE(value == "val1");
-    EXPECT_FALSE(storage.Get("2", value));
+    EXPECT_FALSE(storage.Get("1", value));
+    EXPECT_TRUE(storage.Get("2", value));
+    EXPECT_TRUE(value == "abc");
 }
 
 TEST(StorageTest, PutGet) {

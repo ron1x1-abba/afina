@@ -13,16 +13,20 @@ bool SimpleLRU::Put(const std::string &key, const std::string &value) {
     else {
         auto map_elem = _lru_index.find(key);
         if (map_elem != _lru_index.end()) {
-            while(value.size() >= _capacity + map_elem->second.get().value.size()) {
+            MoveToTail(map_elem->second.get());
+            while(value.size() + key.size() > _capacity) {
                 DeleteWorstNode();
             }
             ChangeNodeValue(map_elem->second.get(), value);
             return true;
         }
-        while(key.size() + value.size() >= _capacity + _lru_head->key.size() + _lru_head->value.size()) {
+        while(key.size() + value.size() > _capacity) {
             DeleteWorstNode();
         }
-        InsertNode(key, value);
+        if(_lru_head == nullptr)
+            InsertNodeToEmptyList(key, value);
+        else
+            InsertNode(key, value);
     }
     return true;
 }
@@ -38,10 +42,13 @@ bool SimpleLRU::PutIfAbsent(const std::string &key, const std::string &value) {
         auto map_elem = _lru_index.find(key);
         if (map_elem != _lru_index.end())
             return false;
-        while(key.size() + value.size() >= _capacity + _lru_head->key.size() + _lru_head->value.size()) {
+        while(key.size() + value.size() > _capacity) {
             DeleteWorstNode();
         }
-        InsertNode(key, value);
+        if(_lru_head == nullptr)
+            InsertNodeToEmptyList(key, value);
+        else
+            InsertNode(key, value);
     }
     return true;
 }
@@ -53,7 +60,8 @@ bool SimpleLRU::Set(const std::string &key, const std::string &value) {
     auto map_elem = _lru_index.find(key);
     if(map_elem == _lru_index.end())
         return false;
-    while(value.size() >= _capacity + map_elem->second.get().value.size()) {
+    MoveToTail(map_elem->second.get());
+    while(value.size() + key.size() > _capacity) {
         DeleteWorstNode();
     }
     ChangeNodeValue(map_elem->second.get(), value);
@@ -90,6 +98,10 @@ bool SimpleLRU::Get(const std::string &key, std::string &value) {
         return false;
     lru_node& node = map_elem->second.get(); 
     value = node.value;
+    return MoveToTail(node);
+}
+
+bool SimpleLRU::MoveToTail(lru_node& node) {
     if(node.next == nullptr)
         return true;
     else if(node.prev == nullptr) {
@@ -154,24 +166,7 @@ void SimpleLRU::ChangeNodeValue(lru_node& node, const std::string& value) {
         node.value = value;
         return;
     }
-    if(node.prev == nullptr) {
-        std::unique_ptr<lru_node> tmp_ptr = std::move(_lru_head);
-        _lru_head = std::move(tmp_ptr->next);
-        _lru_head->prev = nullptr;
-        node.prev = _lru_tail;
-        node.next = nullptr;
-        _lru_tail->next = std::move(tmp_ptr);
-        _lru_tail = &node;
-    }
-    else {
-        node.next->prev = node.prev;
-        node.prev = _lru_tail;
-        std::unique_ptr<lru_node> tmp_ptr = std::move(node.next->prev->next);
-        node.next->prev->next = std::move(node.next);
-        _lru_tail->next = std::move(tmp_ptr);
-        node.next = nullptr;
-        _lru_tail = &node;
-    }
+    MoveToTail(node);
 }
 
 } // namespace Backend
