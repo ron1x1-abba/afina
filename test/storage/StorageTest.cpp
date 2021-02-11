@@ -19,6 +19,30 @@ using namespace std;
 
 
 
+TEST(StorageTest, PutChangeOne) {
+    SimpleLRU storage(10);
+
+    EXPECT_TRUE(storage.Put("1", "val1"));
+    EXPECT_TRUE(storage.Put("2", "abcd"));
+    EXPECT_TRUE(storage.Put("1", "efg"));
+
+    std::string value;
+    EXPECT_TRUE(storage.Get("1", value));
+    EXPECT_TRUE(value == "efg");
+}
+
+TEST(StorageTest, FullCache) {
+    SimpleLRU storage(5);
+
+    EXPECT_TRUE(storage.Put("1", "val1"));
+    EXPECT_TRUE(storage.Put("2", "abc"));
+
+    std::string value;
+    EXPECT_TRUE(storage.Get("1", value));
+    EXPECT_TRUE(value == "val1");
+    EXPECT_FALSE(storage.Get("2", value));
+}
+
 TEST(StorageTest, PutGet) {
     SimpleLRU storage;
 
