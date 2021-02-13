@@ -18,6 +18,18 @@ using namespace std;
 
 
 
+TEST(StorageTest, PutSetDiff) {
+    SimpleLRU storage(10);
+
+    EXPECT_TRUE(storage.Put("1", "abcd"));
+    EXPECT_TRUE(storage.Put("2", "efg"));
+    EXPECT_TRUE(storage.Put("2", "hijk"));
+
+    std::string value;
+    EXPECT_TRUE(storage.Get("1", value));
+    EXPECT_TRUE(value == "abcd");
+}
+
 
 TEST(StorageTest, PutChangeOne) {
     SimpleLRU storage(10);
