@@ -14,13 +14,13 @@ bool SimpleLRU::Put(const std::string &key, const std::string &value) {
         auto map_elem = _lru_index.find(key);
         if (map_elem != _lru_index.end()) {
             MoveToTail(map_elem->second.get());
-            while(value.size() + key.size() > _capacity) {
+            while(value.size() > _capacity + map_elem->second.get().value.size()) {
                 DeleteWorstNode();
             }
             ChangeNodeValue(map_elem->second.get(), value);
             return true;
         }
-        while(key.size() + value.size() > _capacity) {
+        while(value.size() + key.size() > _capacity) {
             DeleteWorstNode();
         }
         if(_lru_head == nullptr)
@@ -61,7 +61,7 @@ bool SimpleLRU::Set(const std::string &key, const std::string &value) {
     if(map_elem == _lru_index.end())
         return false;
     MoveToTail(map_elem->second.get());
-    while(value.size() + key.size() > _capacity) {
+    while(value.size() > _capacity + map_elem->second.get().value.size()) {
         DeleteWorstNode();
     }
     ChangeNodeValue(map_elem->second.get(), value);
@@ -98,12 +98,13 @@ bool SimpleLRU::Get(const std::string &key, std::string &value) {
         return false;
     lru_node& node = map_elem->second.get(); 
     value = node.value;
-    return MoveToTail(node);
+    MoveToTail(node);
+    return true;
 }
 
-bool SimpleLRU::MoveToTail(lru_node& node) {
+void SimpleLRU::MoveToTail(lru_node& node) {
     if(node.next == nullptr)
-        return true;
+        return;
     else if(node.prev == nullptr) {
         node.next->prev = nullptr;
         node.prev = _lru_tail;
@@ -121,8 +122,7 @@ bool SimpleLRU::MoveToTail(lru_node& node) {
         node.prev = _lru_tail;
         node.next = nullptr;
         _lru_tail = &node;
-    }
-    return true; 
+    } 
 }
 
 void SimpleLRU::DeleteWorstNode() {

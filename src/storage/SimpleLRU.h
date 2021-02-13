@@ -74,7 +74,7 @@ private:
     std::map<std::reference_wrapper<const std::string>, std::reference_wrapper<lru_node>, std::less<std::string>> _lru_index;
 
     // Some helpful functions
-    bool MoveToTail(lru_node& node);
+    void MoveToTail(lru_node& node);
     void DeleteWorstNode();
     void InsertNodeToEmptyList(const std::string &key, const std::string &value);
     void InsertNode(const std::string &key, const std::string &value);
