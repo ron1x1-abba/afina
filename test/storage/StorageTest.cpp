@@ -34,13 +34,13 @@ TEST(StorageTest, PutSetDiff) {
 TEST(StorageTest, PutChangeOne) {
     SimpleLRU storage(10);
 
-    EXPECT_TRUE(storage.Put("1", "val1"));
+    EXPECT_TRUE(storage.Put("1", "v1"));
     EXPECT_TRUE(storage.Put("2", "abcd"));
-    EXPECT_TRUE(storage.Put("1", "efg"));
+    EXPECT_TRUE(storage.Put("1", "aaefg"));
 
     std::string value;
     EXPECT_TRUE(storage.Get("1", value));
-    EXPECT_TRUE(value == "efg");
+    EXPECT_TRUE(value == "aaefg");
 }
 
 TEST(StorageTest, FullCache) {

@@ -162,11 +162,7 @@ void SimpleLRU::InsertNode(const std::string &key, const std::string &value) {
 
 void SimpleLRU::ChangeNodeValue(lru_node& node, const std::string& value) {
     _capacity = _capacity + node.value.size() - value.size();
-    if (node.next == nullptr) {
-        node.value = value;
-        return;
-    }
-    MoveToTail(node);
+    node.value = value;
 }
 
 } // namespace Backend
