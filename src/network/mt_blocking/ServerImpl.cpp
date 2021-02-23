@@ -81,6 +81,7 @@ void ServerImpl::Start(uint16_t port, uint32_t n_accept, uint32_t n_workers) {
 // See Server.h
 void ServerImpl::Stop() {
     running.store(false);
+    std::unique_lock<std::mutex> lock(to_notify);
     for( auto i : set_of_clients)
         shutdown(i, SHUT_RD);
     shutdown(_server_socket, SHUT_RDWR);
@@ -88,11 +89,9 @@ void ServerImpl::Stop() {
 
 // See Server.h
 void ServerImpl::Join() {
-    std::cout << "Start joining" << std::endl;
     assert(_thread.joinable());
     _thread.join();
     std::unique_lock<std::mutex> lock(to_notify);
-    std::cout << "Going to wait" << std::endl;
     if(!set_of_clients.empty())
         cv.wait(lock);
 }
@@ -132,7 +131,8 @@ void ServerImpl::OnRun() {
         }
 
 
-        if(set_of_clients.size() >= max_clients) {
+        std::unique_lock<std::mutex> lock(to_notify);
+        if(set_of_clients.size() >= max_clients || !running.load()) {
             close(client_socket);
             continue;
         }
@@ -142,7 +142,6 @@ void ServerImpl::OnRun() {
             new_worker.detach();
         }
     }
-    std::cout << "Closing" << std::endl;
     close(_server_socket);
 
     // Cleanup on exit...
@@ -244,6 +243,7 @@ void ServerImpl::processing(int client_socket) {
         _logger->error("Failed to process connection on descriptor {}: {}", client_socket, ex.what());
     }
 
+    std::unique_lock<std::mutex> lock(to_notify);
     set_of_clients.erase(client_socket);
     if(set_of_clients.empty() && !running.load())
         cv.notify_all();
