@@ -28,6 +28,7 @@ class Executor {
         kStopped
     };
 
+public:
     Executor(std::string name, int size);
     ~Executor();
 
