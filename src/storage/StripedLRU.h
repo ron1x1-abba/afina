@@ -22,11 +22,10 @@ public:
 private:
     StripedLRU(size_t max_size, size_t stripe_count) : amount_of_stripes(stripe_count) {
         for(size_t i = 0; i < stripe_count; ++i) {
-            //shards[i] = std::make_unique<SimpleLRU>(max_size);
-            shards.emplace_back(new SimpleLRU(max_size));
+            shards.emplace_back(max_size);
         }
     }
-    std::vector<std::unique_ptr<SimpleLRU>> shards;
+    std::vector<SimpleLRU> shards;
     size_t amount_of_stripes;
 };
 

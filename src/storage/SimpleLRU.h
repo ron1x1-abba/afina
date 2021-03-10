@@ -22,6 +22,16 @@ class SimpleLRU : public Afina::Storage {
 public:
     SimpleLRU(size_t max_size = 1024) : _max_size(max_size), _capacity(max_size) {}
 
+    SimpleLRU(SimpleLRU&& tmp) {
+        _max_size = std::move(tmp._max_size);
+        _capacity = std::move(tmp._capacity);
+        _lru_index = std::move(tmp._lru_index);
+        _lru_head = std::move(tmp._lru_head);
+        tmp._lru_head = nullptr;
+        _lru_tail = tmp._lru_tail;
+        tmp._lru_tail = nullptr;
+    }
+
     ~SimpleLRU() {
         _lru_index.clear();
         if(_lru_head != nullptr) {
