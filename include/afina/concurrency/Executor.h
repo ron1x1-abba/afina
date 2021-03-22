@@ -8,10 +8,14 @@
 #include <queue>
 #include <string>
 #include <thread>
+#include <chrono>
 
 namespace Afina {
 namespace Concurrency {
 
+class Executor;
+
+extern void perform(Executor *executor); 
 /**
  * # Thread pool
  */
@@ -28,8 +32,13 @@ class Executor {
         kStopped
     };
 
+    /**
+     * Main function that all pool threads are running. It polls internal task queue and execute tasks
+     */
+    friend void perform(Executor *executor);
+
 public:
-    Executor(std::string name, int size);
+    Executor(size_t low_watermark, size_t high_watermark, size_t idle_time, size_t max_queue_size);
     ~Executor();
 
     /**
@@ -52,8 +61,14 @@ public:
         auto exec = std::bind(std::forward<F>(func), std::forward<Types>(args)...);
 
         std::unique_lock<std::mutex> lock(this->mutex);
-        if (state != State::kRun) {
+        if (state != State::kRun || tasks.size() == max_queue_size) {
             return false;
+        }
+
+        if(cur_threads < high_watermark && cur_running == cur_threads) {
+            ++cur_threads;
+            // perform
+            threads.push_back(std::thread(perform, this));
         }
 
         // Enqueue new task
@@ -68,11 +83,6 @@ private:
     Executor(Executor &&);                 // = delete;
     Executor &operator=(const Executor &); // = delete;
     Executor &operator=(Executor &&);      // = delete;
-
-    /**
-     * Main function that all pool threads are running. It polls internal task queue and execute tasks
-     */
-    friend void perform(Executor *executor);
 
     /**
      * Mutex to protect state below from concurrent modification
@@ -98,7 +108,14 @@ private:
      * Flag to stop bg threads
      */
     State state;
-};
+    size_t low_watermark;
+    size_t high_watermark;
+    size_t max_queue_size;
+    size_t idle_time; // miliseconds
+    size_t cur_running;
+    size_t cur_threads;
+    std::condition_variable stop;
+}; // end of Executor
 
 } // namespace Concurrency
 } // namespace Afina
