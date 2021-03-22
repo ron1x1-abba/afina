@@ -9,6 +9,7 @@
 #include <string>
 #include <thread>
 #include <chrono>
+#include <iostream>
 
 namespace Afina {
 namespace Concurrency {
@@ -16,6 +17,7 @@ namespace Concurrency {
 class Executor;
 
 extern void perform(Executor *executor); 
+// void perform(Executor *executor); 
 /**
  * # Thread pool
  */
@@ -68,7 +70,8 @@ public:
         if(cur_threads < high_watermark && cur_running == cur_threads) {
             ++cur_threads;
             // perform
-            threads.push_back(std::thread(perform, this));
+            threads.emplace_back(std::thread(perform, this));
+            threads.back().detach();
         }
 
         // Enqueue new task

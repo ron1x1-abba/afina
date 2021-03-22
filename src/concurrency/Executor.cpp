@@ -10,7 +10,8 @@ namespace Concurrency {
             cur_running = 0;
             for(size_t i = 0; i < low_watermark; ++i) {
                 ++cur_threads;
-                threads.push_back(std::thread(perform, this));
+                threads.emplace_back(std::thread(perform, this));
+                threads.back().detach();
             }
         }
     
@@ -22,6 +23,15 @@ namespace Concurrency {
         std::unique_lock<std::mutex> lock(mutex);
         if (state != State::kStopped) {
             state = State::kStopping;
+            if (cur_threads == 0) {
+                state = State::kStopped;
+                return;
+            }
+            empty_condition.notify_all();
+            if (await) {
+                stop.wait(lock);
+                state = State::kStopped;
+            }
         }
     }
 
@@ -32,7 +42,7 @@ namespace Concurrency {
             bool timeout_var = false;
             while((executor->state == Executor::State::kRun) && (executor->tasks.empty())) {
                 auto point = std::chrono::steady_clock::now();
-                auto timeout = executor->empty_condition.wait_for(lock, std::chrono::duration<std::chrono::milliseconds>(std::chrono::milliseconds {waiting_time}));
+                auto timeout = executor->empty_condition.wait_for(lock, std::chrono::milliseconds {waiting_time});
                 if (timeout == std::cv_status::timeout) {
                     timeout_var = true;
                     break;
@@ -41,19 +51,31 @@ namespace Concurrency {
                     waiting_time -= std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - point).count();
                 }
             }
-            if (timeout_var && (executor->cur_threads > executor->low_watermark)) {
-                break;
-            }
             if (executor->tasks.empty()) {
-                break;
+                if (!timeout_var || timeout_var && (executor->cur_threads > executor->low_watermark)) {
+                    break;
+                }
+                continue;
             }
-            executor->empty_condition.wait(lock);
+            auto task = executor->tasks.front();
+            executor->tasks.pop_front();
+            ++(executor->cur_running);
+            lock.unlock();
+            try {
+                task();
+            }
+            catch (...) {
+                std::cout << "Error in task!" << std::endl; // may be another log
+            }
+            lock.lock();
+            --(executor->cur_running);
         }
         --(executor->cur_threads);
         if((executor->cur_threads == 0) && (executor->state == Executor::State::kStopping)) {
-            executor->state = Executor::State::kStopped;
+            // executor->state = Executor::State::kStopped;
             executor->stop.notify_all();
         }
-}
+    }
+
 }
 } // namespace Afina
