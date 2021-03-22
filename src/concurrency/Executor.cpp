@@ -8,6 +8,7 @@ namespace Concurrency {
             std::unique_lock<std::mutex> lock(mutex);
             state = State::kRun;
             cur_running = 0;
+            cur_threads = 0;
             for(size_t i = 0; i < low_watermark; ++i) {
                 ++cur_threads;
                 threads.emplace_back(std::thread(perform, this));
@@ -25,7 +26,6 @@ namespace Concurrency {
             state = State::kStopping;
             if (cur_threads == 0) {
                 state = State::kStopped;
-                return;
             }
             empty_condition.notify_all();
             if (await) {

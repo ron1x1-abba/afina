@@ -98,6 +98,7 @@ void ServerImpl::Join() {
 
 // See Server.h
 void ServerImpl::OnRun() {
+    Concurrency::Executor thread_pool(max_clients > 3 ? 3 : max_clients, max_clients, 1000, 30);
     while (running.load()) {
         _logger->debug("waiting for connection...");
 
@@ -138,12 +139,13 @@ void ServerImpl::OnRun() {
         }
         else {
             set_of_clients.insert(client_socket);
-            std::thread new_worker(&ServerImpl::processing, this, client_socket);
-            new_worker.detach();
+            // std::thread new_worker(&ServerImpl::processing, this, client_socket);
+            // new_worker.detach();
+            thread_pool.Execute(&ServerImpl::processing, this, client_socket);
         }
     }
+    thread_pool.Stop(true);
     close(_server_socket);
-
     // Cleanup on exit...
     _logger->warn("Network stopped");
 }

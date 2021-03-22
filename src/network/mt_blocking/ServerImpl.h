@@ -7,6 +7,7 @@
 #include <condition_variable>
 
 #include <afina/network/Server.h>
+#include <afina/concurrency/Executor.h>
 
 namespace spdlog {
 class logger;
