@@ -29,8 +29,8 @@ namespace Concurrency {
             }
             empty_condition.notify_all();
             if (await) {
-                stop.wait(lock);
-                state = State::kStopped;
+                while(state != State::kStopped)
+                    stop.wait(lock);
             }
         }
     }
@@ -38,11 +38,12 @@ namespace Concurrency {
     void perform(Executor *executor) {
         std::unique_lock<std::mutex> lock(executor->mutex);
         size_t waiting_time = executor->idle_time;
-        while (executor->state == Executor::State::kRun) {
+        while (executor->state == Executor::State::kRun || !executor->tasks.empty()) {
             bool timeout_var = false;
             while((executor->state == Executor::State::kRun) && (executor->tasks.empty())) {
                 auto point = std::chrono::steady_clock::now();
-                auto timeout = executor->empty_condition.wait_for(lock, std::chrono::milliseconds {waiting_time});
+                // auto timeout = executor->empty_condition.wait_for(lock, std::chrono::milliseconds {waiting_time});
+                auto timeout = executor->empty_condition.wait_until(lock, point + std::chrono::milliseconds(waiting_time));
                 if (timeout == std::cv_status::timeout) {
                     timeout_var = true;
                     break;
@@ -64,15 +65,19 @@ namespace Concurrency {
             try {
                 task();
             }
+            catch(const std::exception& e) {
+                std::cout << e.what() << std::endl;
+            }
             catch (...) {
                 std::cout << "Error in task!" << std::endl; // may be another log
             }
             lock.lock();
             --(executor->cur_running);
+            waiting_time = executor->idle_time;
         }
         --(executor->cur_threads);
         if((executor->cur_threads == 0) && (executor->state == Executor::State::kStopping)) {
-            // executor->state = Executor::State::kStopped;
+            executor->state = Executor::State::kStopped;
             executor->stop.notify_all();
         }
     }
