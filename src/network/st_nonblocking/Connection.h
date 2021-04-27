@@ -7,6 +7,7 @@
 #include <iostream>
 #include <unistd.h>
 #include <sys/uio.h>
+#include <cassert>
 
 #include <afina/execute/Command.h>
 #include <spdlog/logger.h>
@@ -28,8 +29,8 @@ public:
         _socket(s), _storage(storage), _logger(logger) {
         std::memset(&_event, 0, sizeof(struct epoll_event));
         _event.data.ptr = this;
-        _data.resize(4096);
-        _data_size = _data.size();
+        _data_size = 4096;
+        std::memset(_data, 0, 4096);
         _data_offset = 0;
         _out_offset = 0;
     }
@@ -57,10 +58,11 @@ private:
     std::unique_ptr<Execute::Command> command_to_execute;
     bool _alive = true;
     std::vector<std::string> _output;
-    std::string _data;
+    char _data[4096];
     size_t _data_size;
     size_t _data_offset;
     size_t _out_offset;
+    bool _write_only = false;
 };
 
 } // namespace STnonblock

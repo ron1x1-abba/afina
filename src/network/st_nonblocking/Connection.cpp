@@ -19,14 +19,12 @@ void Connection::OnError() {
 // See Connection.h
 void Connection::OnClose() {
     _logger->debug("Connection is closing on socket : {}", _socket);
-    _event.events &= ~(EPOLLRDHUP | EPOLLHUP | EPOLLERR | EPOLLOUT | EPOLLIN);
     _alive = false; // clear all tmp information, isAlive() -> false
 }
 
 // See Connection.h
 void Connection::DoRead() {
-    if(!_alive)
-        return;
+    assert(_alive);
     // Process new connection:
     // - read commands until socket alive
     // - execute each command
@@ -34,9 +32,9 @@ void Connection::DoRead() {
     _logger->debug("Reading in Connection on socket : {}", _socket);
     try {
         int readed_bytes = -1;
-        // char client_buffer[4096] = "";
         // while ((readed_bytes = read(_socket, client_buffer, sizeof(client_buffer))) > 0) {
-        while ((readed_bytes = read(_socket, &_data[_data_offset], _data_size - _data_offset)) > 0) {
+        //while ((readed_bytes = read(_socket, _data + _data_offset, sizeof(_data) - _data_offset)) > 0) {
+        if ((readed_bytes = read(_socket, _data + _data_offset, _data_size - _data_offset)) > 0) {
             _logger->debug("Got {} bytes from socket", readed_bytes);
             _data_offset += readed_bytes;
             // Single block of data readed from the socket could trigger inside actions a multiple times,
@@ -49,7 +47,7 @@ void Connection::DoRead() {
                 if (!command_to_execute) {
                     std::size_t parsed = 0;
                     // if (parser.Parse(client_buffer, readed_bytes, parsed)) {
-                    if (parser.Parse(&_data[0], _data_offset, parsed)) {
+                    if (parser.Parse(_data, _data_offset, parsed)) {
                         // There is no command to be launched, continue to parse input stream
                         // Here we are, current chunk finished some command, process it
                         _logger->debug("Found new command: {} in {} bytes", parser.Name(), parsed);
@@ -64,8 +62,7 @@ void Connection::DoRead() {
                     if (parsed == 0) {
                         break;
                     } else {
-                        // std::memmove(client_buffer, client_buffer + parsed, readed_bytes - parsed);
-                        std::memmove(&_data[_data_offset], &_data[_data_offset + parsed], _data_offset - parsed);
+                        std::memmove(_data, _data + parsed, _data_offset - parsed);
                         _data_offset -= parsed;
                     }
                 }
@@ -75,11 +72,9 @@ void Connection::DoRead() {
                     _logger->debug("Fill argument: {} bytes of {}", _data_offset, arg_remains);
                     // There is some parsed command, and now we are reading argument
                     std::size_t to_read = std::min(arg_remains, std::size_t(_data_offset));
-                    // argument_for_command.append(client_buffer, to_read);
-                    argument_for_command.append(&_data[0], to_read);
+                    argument_for_command.append(_data, to_read);
 
-                    // std::memmove(client_buffer, client_buffer + to_read, readed_bytes - to_read);
-                    std::memmove(&_data[_data_offset], &_data[_data_offset + to_read], _data_offset - to_read);
+                    std::memmove(_data, _data + to_read, _data_offset - to_read);
                     arg_remains -= to_read;
                     _data_offset -= to_read;
                 }
@@ -100,10 +95,6 @@ void Connection::DoRead() {
                     _output.push_back(std::move(result));
                     if (_output.size() > MAX_OUTPUT)
                         _event.events &= ~EPOLLIN;
-                    // if (send(_socket, result.data(), result.size(), 0) <= 0) {
-                    //     std::cout << "Error in sending response" << std::endl;
-                    //     throw std::runtime_error("Failed to send response");
-                    // }
 
                     // Prepare for the next command
                     command_to_execute.reset();
@@ -113,15 +104,16 @@ void Connection::DoRead() {
             } // while (readed_bytes)
         }
 
-        if (readed_bytes == 0) { // eof in socket
+        if (readed_bytes == 0 && errno != EAGAIN) { // eof in socket
             _logger->debug("Connection closed by client on socket : {}", _socket);
-            _alive = false;
-        } else {
+            _write_only = true;
+        }
+        else if (errno != EAGAIN){
             throw std::runtime_error(std::string(strerror(errno)));
         }
     } catch (std::runtime_error &ex) {
         _logger->error("Failed to process connection on descriptor {}: {}", _socket, ex.what());
-        _alive = false;
+        OnClose();
     }
 }
 
@@ -130,7 +122,7 @@ void Connection::DoWrite() {
     if(!_alive)
         return;
     _logger->debug("Writing in Connection on socket : {}", _socket);
-    iovec out[_output.size()];
+    iovec out[_output.size()] = {};
     for(size_t i = 0; i < _output.size(); ++i) {
         out[i].iov_base = &(_output[i][0]);
         out[i].iov_len = _output[i].size();
@@ -138,8 +130,8 @@ void Connection::DoWrite() {
     out[0].iov_base = static_cast<char*>(out[0].iov_base) + _out_offset;
     out[0].iov_len -= _out_offset;
     int ret = writev(_socket, &out[0], _output.size());
-    if(ret == -1) {
-        _alive = false;
+    if(ret == -1 && errno != EAGAIN) {
+        OnClose();
         _logger->debug("Connection failed to write to socket : {}", _socket);
         return;
     }
@@ -148,7 +140,10 @@ void Connection::DoWrite() {
         _output.erase(_output.begin(), _output.begin() + 1);
     }
     _out_offset = ret;
-    if(_output.empty()) {
+    if(_output.empty() && _write_only) {
+        OnClose();
+    }
+    else if(_output.empty()){
         _event.events &= ~EPOLLOUT;
     }
     else if(_output.size() < MAX_OUTPUT - MAX_OUTPUT / 10) {
