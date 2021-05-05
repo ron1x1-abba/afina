@@ -8,6 +8,7 @@
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/eventfd.h>
 
 #include <spdlog/logger.h>
 
@@ -21,14 +22,15 @@ namespace Network {
 namespace MTnonblock {
 
 // See Worker.h
-Worker::Worker(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Afina::Logging::Service> pl)
-    : _pStorage(ps), _pLogging(pl), isRunning(false), _epoll_fd(-1) {
+Worker::Worker(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Afina::Logging::Service> pl, std::mutex* m, std::set<Connection*>* set_of_connections, int event_fd)
+    : _pStorage(ps), _pLogging(pl), isRunning(false), _epoll_fd(-1), _m(m),  _set_of_connections(set_of_connections), _event_fd(event_fd){
     // TODO: implementation here
 }
 
 // See Worker.h
 Worker::~Worker() {
     // TODO: implementation here
+    // event_fd ???
 }
 
 // See Worker.h
@@ -57,12 +59,19 @@ void Worker::Start(int epoll_fd) {
 }
 
 // See Worker.h
-void Worker::Stop() { isRunning = false; }
+void Worker::Stop() { 
+    // _logger->debug("Stopping worker");
+    isRunning.store(false); 
+}
 
 // See Worker.h
 void Worker::Join() {
     assert(_thread.joinable());
+    // _logger->debug("Joining");
+    // _logger->debug(_set_of_connections->size());
+    // _logger->debug(isRunning.load());
     _thread.join();
+    // _logger->debug("End of joining");
 }
 
 // See Worker.h
@@ -77,6 +86,7 @@ void Worker::OnRun() {
     int timeout = -1;
     std::array<struct epoll_event, 64> mod_list;
     while (isRunning) {
+        _logger->debug("entering epoll");
         int nmod = epoll_wait(_epoll_fd, &mod_list[0], mod_list.size(), timeout);
         _logger->debug("Worker wokeup: {} events", nmod);
 
@@ -102,10 +112,12 @@ void Worker::OnRun() {
                 // Depends on what connection wants...
                 if (current_event.events & EPOLLIN) {
                     _logger->trace("Got EPOLLIN");
+                    std::lock_guard<std::mutex> lock(*_m);
                     pconn->DoRead();
                 }
                 if (current_event.events & EPOLLOUT) {
                     _logger->trace("Got EPOLLOUT");
+                    std::lock_guard<std::mutex> lock(*_m);
                     pconn->DoWrite();
                 }
             }
@@ -117,6 +129,9 @@ void Worker::OnRun() {
                 if ((epoll_ctl_retval = epoll_ctl(_epoll_fd, EPOLL_CTL_MOD, pconn->_socket, &pconn->_event))) {
                     _logger->debug("epoll_ctl failed during connection rearm: error {}", epoll_ctl_retval);
                     pconn->OnError();
+                    std::lock_guard<std::mutex> lock(*_m);
+                    close(pconn->_socket);
+                    _set_of_connections->erase(pconn);
                     delete pconn;
                 }
             }
@@ -125,12 +140,19 @@ void Worker::OnRun() {
                 if (epoll_ctl(_epoll_fd, EPOLL_CTL_DEL, pconn->_socket, &pconn->_event)) {
                     std::cerr << "Failed to delete connection!" << std::endl;
                 }
+                std::lock_guard<std::mutex> lock(*_m);
+                close(pconn->_socket);
+                _set_of_connections->erase(pconn);
                 delete pconn;
             }
+            _logger->debug("polling sockets");
         }
         // TODO: Select timeout...
     }
     _logger->warn("Worker stopped");
+    if (eventfd_write(_event_fd, 1)) {
+        throw std::runtime_error("Failed to wakeup workers");
+    }
 }
 
 } // namespace MTnonblock

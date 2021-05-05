@@ -96,7 +96,7 @@ void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) 
 
     _workers.reserve(n_workers);
     for (int i = 0; i < n_workers; i++) {
-        _workers.emplace_back(pStorage, pLogging);
+        _workers.emplace_back(pStorage, pLogging, &_m, &set_of_connections, _event_fd);
         _workers.back().Start(_data_epoll_fd);
     }
 
@@ -110,6 +110,14 @@ void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) 
 // See Server.h
 void ServerImpl::Stop() {
     _logger->warn("Stop network service");
+    {
+        std::lock_guard<std::mutex> lock(_m);
+        for(auto i : set_of_connections) {
+            shutdown(i->_socket, SHUT_RD);
+        }
+    }
+
+    _logger->debug(_workers.size());
     // Said workers to stop
     for (auto &w : _workers) {
         w.Stop();
@@ -119,6 +127,7 @@ void ServerImpl::Stop() {
     if (eventfd_write(_event_fd, 1)) {
         throw std::runtime_error("Failed to wakeup workers");
     }
+    // close(_server_socket);
 }
 
 // See Server.h
@@ -126,9 +135,16 @@ void ServerImpl::Join() {
     for (auto &t : _acceptors) {
         t.join();
     }
-
+    _acceptors.clear();
     for (auto &w : _workers) {
         w.Join();
+    }
+    _workers.clear();
+    std::lock_guard<std::mutex> lock(_m);
+    close(_server_socket);
+    for(auto i : set_of_connections){
+        close(i->_socket);
+        delete i;
     }
 }
 
@@ -193,7 +209,7 @@ void ServerImpl::OnRun() {
                 }
 
                 // Register the new FD to be monitored by epoll.
-                Connection *pc = new Connection(infd);
+                Connection *pc = new Connection(infd, pStorage, _logger);
                 if (pc == nullptr) {
                     throw std::runtime_error("Failed to allocate connection");
                 }
@@ -206,8 +222,17 @@ void ServerImpl::OnRun() {
                     if ((epoll_ctl_retval = epoll_ctl(_data_epoll_fd, EPOLL_CTL_ADD, pc->_socket, &pc->_event))) {
                         _logger->debug("epoll_ctl failed during connection register in workers'epoll: error {}", epoll_ctl_retval);
                         pc->OnError();
+                        close(pc->_socket);
                         delete pc;
                     }
+                    else {
+                        std::lock_guard<std::mutex> lock(_m);
+                        set_of_connections.emplace(pc);
+                    }
+                }
+                else {
+                    close(pc->_socket);
+                    delete pc;
                 }
             }
         }

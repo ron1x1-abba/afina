@@ -232,14 +232,15 @@ void ServerImpl::OnNewConnection(int epoll_descr) {
         if (pc->isAlive()) {
             if (epoll_ctl(epoll_descr, EPOLL_CTL_ADD, pc->_socket, &pc->_event)) {
                 pc->OnError();
+                close(pc->_socket);
                 delete pc;
             }
+            set_of_connections.emplace(pc);
         }
         else {
             close(pc->_socket);
             delete pc;
         }
-        set_of_connections.emplace(pc);
     }
 }
 

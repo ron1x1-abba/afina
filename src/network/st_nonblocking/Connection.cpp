@@ -46,7 +46,6 @@ void Connection::DoRead() {
                 // There is no command yet
                 if (!command_to_execute) {
                     std::size_t parsed = 0;
-                    // if (parser.Parse(client_buffer, readed_bytes, parsed)) {
                     if (parser.Parse(_data, _data_offset, parsed)) {
                         // There is no command to be launched, continue to parse input stream
                         // Here we are, current chunk finished some command, process it
@@ -119,8 +118,7 @@ void Connection::DoRead() {
 
 // See Connection.h
 void Connection::DoWrite() {
-    if(!_alive)
-        return;
+    assert(_alive);
     _logger->debug("Writing in Connection on socket : {}", _socket);
     iovec out[_output.size()] = {};
     for(size_t i = 0; i < _output.size(); ++i) {
