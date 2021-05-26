@@ -4,6 +4,10 @@
 #include <atomic>
 #include <memory>
 #include <thread>
+#include <mutex>
+#include <set>
+
+#include "Connection.h"
 
 namespace spdlog {
 class logger;
@@ -27,7 +31,8 @@ namespace MTnonblock {
  */
 class Worker {
 public:
-    Worker(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Afina::Logging::Service> pl);
+    Worker(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Afina::Logging::Service> pl, std::mutex* m, std::set<Connection*>* set_of_connections, 
+            int event_fd);
     ~Worker();
 
     Worker(Worker &&);
@@ -81,6 +86,9 @@ private:
 
     // EPOLL descriptor using for events processing
     int _epoll_fd;
+    int _event_fd;
+    std::mutex* _m;
+    std::set<Connection*>* _set_of_connections;
 };
 
 } // namespace MTnonblock
