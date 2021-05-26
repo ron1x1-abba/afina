@@ -15,18 +15,19 @@ void Connection::Start() {
 // See Connection.h
 void Connection::OnError() {
     _logger->debug("Error in Connection on socket : {}", _socket);
-    _alive.store(false);
+    _alive.store(false, std::memory_order::memory_order_relaxed);
 }
 
 // See Connection.h
 void Connection::OnClose() {
     _logger->debug("Connection is closing on socket : {}", _socket);
-    _alive.store(false);
+    _alive.store(false, std::memory_order::memory_order_relaxed);
 }
 
 // See Connection.h
 void Connection::DoRead() {
-    assert(_alive.load());
+    std::atomic_thread_fence(std::memory_order::memory_order_acquire);
+    assert(_alive.load(std::memory_order::memory_order_relaxed));
     // Process new connection:
     // - read commands until socket alive
     // - execute each command
@@ -105,22 +106,24 @@ void Connection::DoRead() {
             } // while (readed_bytes)
         }
 
-        if (readed_bytes == 0 && errno != EAGAIN) { // eof in socket
+        if (readed_bytes == 0) { // eof in socket
             _logger->debug("Connection closed by client on socket : {}", _socket);
-            _write_only.store(true);
+            _write_only.store(true, std::memory_order::memory_order_relaxed);
         }
         else if (errno != EAGAIN){
             throw std::runtime_error(std::string(strerror(errno)));
         }
     } catch (std::runtime_error &ex) {
         _logger->error("Failed to process connection on descriptor {}: {}", _socket, ex.what());
-        _alive.store(false);
+        _alive.store(false, std::memory_order::memory_order_relaxed);
     }
+    std::atomic_thread_fence(std::memory_order::memory_order_release);
 }
 
 // See Connection.h
 void Connection::DoWrite() {
-    assert(_alive.load());
+    std::atomic_thread_fence(std::memory_order::memory_order_acquire);
+    assert(_alive.load(std::memory_order::memory_order_relaxed));
     _logger->debug("Writing in Connection on socket : {}", _socket);
     iovec out[_output.size()] = {};
     for(size_t i = 0; i < _output.size(); ++i) {
@@ -140,8 +143,8 @@ void Connection::DoWrite() {
         _output.erase(_output.begin(), _output.begin() + 1);
     }
     _out_offset = ret;
-    if(_output.empty() && _write_only.load()) {
-        _alive.store(false);
+    if(_output.empty() && _write_only.load(std::memory_order::memory_order_relaxed)) {
+        _alive.store(false, std::memory_order::memory_order_relaxed);
     }
     else if(_output.empty()){
         _event.events &= ~EPOLLOUT;
@@ -149,6 +152,7 @@ void Connection::DoWrite() {
     else if(_output.size() < MAX_OUTPUT - MAX_OUTPUT / 10) {
         _event.events |= EPOLLIN;
     }
+    std::atomic_thread_fence(std::memory_order::memory_order_release);
 }
 
 } // namespace MTnonblock
