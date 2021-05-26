@@ -10,6 +10,7 @@ namespace MTnonblock {
 void Connection::Start() {
     _logger->debug("Starting new connection socket : {}", _socket);
     _event.events |= EPOLLIN | EPOLLERR | EPOLLHUP | EPOLLRDHUP;
+    _alive.store(true, std::memory_order::memory_order_relaxed);
 }
 
 // See Connection.h
@@ -111,6 +112,7 @@ void Connection::DoRead() {
             _write_only.store(true, std::memory_order::memory_order_relaxed);
         }
         else if (errno != EAGAIN){
+            std::atomic_thread_fence(std::memory_order::memory_order_release);
             throw std::runtime_error(std::string(strerror(errno)));
         }
     } catch (std::runtime_error &ex) {
@@ -136,6 +138,7 @@ void Connection::DoWrite() {
     if(ret == -1 && errno != EAGAIN) {
         OnClose();
         _logger->debug("Connection failed to write to socket : {}", _socket);
+        std::atomic_thread_fence(std::memory_order::memory_order_release);
         return;
     }
     for(size_t i = 0; i < _output.size() && ret >= _output[i].size(); ++i) {
