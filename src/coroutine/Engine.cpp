@@ -68,7 +68,8 @@ void Engine::block(void *coro){
     if(coro == nullptr || coro == cur_routine){
         delete_from(alive, cur_routine);
         add_to(blocked, cur_routine);
-        yield();
+        Restore(*idle_ctx);
+        // yield();
     }
     else {
         context* routine_ = static_cast<context*>(coro);
